@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <br>
+    <h1>{% block title %} Opt in - Algorand blockchain network {% endblock %}</h1>
+    <br>
+
+    <div id="network-selection-form" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+                <div class="row">
+                 <label for="network">Choose network</label>
+                 <div class="col-md">
+                         <select class="form-select form-select-sm bg-secondary" aria-label=".form-select-sm example" name="network" id="network">
+                         <option value="local">Local-net (dev)</option>
+                         <option value="main">Main-net</option>
+                         <option value="local">Test-net</option>
+                     </select>
+                 </div>
+                 <div class="col-md">
+                     <button type="button" class="btn btn-dark btn-sm" onclick="accounts()">Select network</button>
+                 </div>
+                </div>
+            <!--
+                <br>
+                <h3>User's records</h3>
+            -->
+        </div>
+        <div>
+            <!--    TABLE GOES HERE     -->
+        </div>
+    </div>
+{% endblock %}

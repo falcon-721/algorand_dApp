@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <script>
+        // global variables
+        //const algodServer = "https://mainnet-api.algonode.cloud"
+        let incomingLedger = 'TestNet'
+        let algodServer = "https://testnet-api.algonode.cloud"
+        let algorand_token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        const port = '';
+        let algodClient;
+        let txParamsJS = {}
+        let tnAccounts = [];
+        let signedTxs;
+        let tx = {};
+        let indexerClient = {};
+
+        // populate accounts
+        async function select_network() {
+            // get the current selected network
+            var select = document.getElementById('network');
+            var value = select.options[select.selectedIndex].value;
+            console.log(value); // en
+            if (value == 'local') {
+                console.log('local network selected');
+                // TODO: change this accordingly in dev network
+                incomingLedger = 'LocalNet';
+                algodServer = "https://testnet-api.algonode.cloud";
+            } else if (value == 'main') {
+                console.log('main network selected');
+                incomingLedger = 'MainNet';
+                algodServer = "https://mainnet-api.algonode.cloud";
+            } else if (value == 'test') {
+                console.log('test network selected');
+                incomingLedger = 'TestNet';
+                algodServer = "https://testnet-api.algonode.cloud";
+            };
+            alert ('The '+value+' network selected successfully')
+            load_accounts()
+        }
+
+        // populate accounts
+        function load_accounts() {
+            setup()
+            AlgoSigner.accounts({
+                ledger: incomingLedger
+            })
+            .then((d) => {
+                // Append accounts to account select
+                let select = document.getElementById('from');
+                select.textContent = '';
+                for (var i = d.length - 1; i >= 0; i--) {
+                    let option = document.createElement('option');
+                    option.text = d[i].address;
+                    option.value = d[i].address;
+                    select.appendChild(option);
+                }
+            })
+            .catch((e) => {
+                console.error(e);
+                alert (JSON.stringify(e, null, 2));
+            })
+            .finally(() => {
+                //alert ('All accounts in the network loaded');
+            });
+        }
+
+        
+        // setting up sdk
+        async function setup() {
+            algodClient = await new algosdk.Algodv2(algorand_token, algodServer, port);
+            //indexerClient = new algosdk.Indexer(token, indexerServer, port);
+            await algodClient.healthCheck().do()
+            .then(d => { 
+                console.log('setup completed')
+            })
+            .catch(e => { 
+                console.error(e); 
+            });
+        }
+
+        async function params() {
+            //let paramsCodeElem = document.getElementById('params-code');
+            await algodClient.getTransactionParams().do()
+            .then((d) => {
+                txParamsJS = d;
+                //paramsCodeElem.innerHTML = JSON.stringify(txParamsJS, null, 2);
+            })
+            .catch((e) => {
+                console.error(e);
+                //paramsCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                //hljs.highlightBlock(paramsCodeElem);
+                console.log('params created')
+            });
+        }
+
+        async function sign() {
+            //let signCodeElem = document.getElementById('sign-code');
+
+            const txn = await algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
+                from: document.getElementById('from').value,
+                assetName: document.getElementById('asset-name').value,
+                unitName: document.getElementById('unit-name').value,
+                total: +document.getElementById('total-units').value,
+                decimals: +document.getElementById('decimals').value,
+                note: AlgoSigner.encoding.stringToByteArray(document.getElementById('note').value),
+                suggestedParams: {...txParamsJS}
+            });
+
+            // Use the AlgoSigner encoding library to make the transactions base64
+            const txn_b64 = await AlgoSigner.encoding.msgpackToBase64(txn.toByte());
+
+            await AlgoSigner.signTxn([{txn: txn_b64}])
+            .then((d) => {
+                signedTxs = d;
+                //signCodeElem.innerHTML = JSON.stringify(d, null, 2);
+            })
+            .catch((e) => {
+                console.error(e);
+                //signCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                //hljs.highlightBlock(signCodeElem);
+                console.log('txn signed')
+            });
+        }
+
+        async function send() {
+            //let sendCodeElem = document.getElementById('send-code');
+
+            // Sending first transaction only for demo purposes
+            await AlgoSigner.send({
+                ledger: incomingLedger,
+                tx: signedTxs[0].blob
+            })
+            .then((d) => {
+                //sendCodeElem.innerHTML = JSON.stringify(d, null, 2);
+                tx = d;
+            })
+            .catch((e) => {
+                console.error(e);
+                //sendCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                //hljs.highlightBlock(sendCodeElem);
+                console.log('txn sent')
+            });
+        }
+
+        async function pending() {
+            //let pendingCodeElem = document.getElementById('pending-code');
+
+            await algodClient.pendingTransactionInformation(tx.txId).do()
+            .then((d) => {
+                //pendingCodeElem.innerHTML = JSON.stringify(d, toJsonReplace, 2);
+            })
+            .catch((e) => {
+                console.error(e);
+                //pendingCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                //hljs.highlightBlock(pendingCodeElem);
+                console.log('txn pending completed')
+            });
+    }
+
+        async function create_nft () {
+            setup()
+            //params = algodClient.suggestedParams();
+            let params = await algodClient.getTransactionParams().do();
+            //params.fee = 1000;
+            //params.flat_fee = true;
+            let from = document.getElementById('from').value;
+            let assetName = document.getElementById('asset-name').value;
+            let assetUrl = document.getElementById('asset-url').value;
+            let unitName = document.getElementById('unit-name').value;
+            let total = +document.getElementById('total-units').value;
+            let decimals = +document.getElementById('decimals').value;
+            const enc = new TextEncoder();
+            let note = enc.encode(document.getElementById('note').value);
+            //console.log(+document.getElementById('amount').value)
+            //console.log(typeof(+document.getElementById('amount').value))
+            let txn = algosdk.makeAssetCreateTxnWithSuggestedParams(from, assetName, unitName, total, decimals, undefined, note, params);
+            console.log('transaction created')
+
+            // Use the AlgoSigner encoding library to make the transactions base64
+            let txn_b64 = AlgoSigner.encoding.msgpackToBase64(txn.toByte());
+            await AlgoSigner.signTxn([{txn: txn_b64}])
+            .then((d) => {
+                signedTxs = d;
+            })
+            .catch((e) => {
+                console.error(e);
+            });
+            console.log('transaction signed')
+
+            // send transaction
+            await AlgoSigner.send({
+                ledger: 'TestNet',
+                tx: signedTxs[0].blob
+            })
+            .then((d) => {
+                tx = d;
+            })
+            .catch((e) => {
+                console.error(e);
+            });
+            console.log('transaction sent')
+
+            // Wait for confirmation
+            let confirmedTxn = await waitForConfirmation(algodClient, tx, 30);
+            //Get the completed Transaction
+            console.log("Transaction " + txId + " confirmed in round " + confirmedTxn["confirmed-round"]);
+            let mytxinfo = JSON.stringify(confirmedTxn.txn.txn, undefined, 2);
+            console.log("Transaction information: %o", mytxinfo);
+            var string = new TextDecoder().decode(confirmedTxn.txn.txn.note);
+            console.log("Note field: ", string);
+            alert('NFT certificate created successfully')
+        }
+
+        async function create_nft_proper () {
+            await params()
+            await sign()
+            await send()
+            await pending()
+        }
+    </script>
+
+    <br>
+    <h1>{% block title %} Asset creation - Algorand blockchain network {% endblock %}</h1>
+    <br>
+
+    <div id="network-selection-form" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+                <div class="row">
+                 <label for="network">Choose network</label>
+                 <div class="col-md">
+                         <select class="form-select form-select-sm bg-secondary" aria-label=".form-select-sm example" name="network" id="network">
+                             <option value="test">Test-net</option>
+                             <option value="main">Main-net</option>
+                             <option value="local">Local-net (dev)</option>
+                     </select>
+                 </div>
+                 <div class="col-md">
+                     <button type="button" class="btn btn-dark btn-sm" onclick="select_network()">Select network</button>
+                 </div>
+                </div>
+             <!--
+                <br>
+                <h3>User's records</h3>
+             -->
+        </div>
+        <div>
+            <!--    TABLE GOES HERE     -->
+        </div>
+    </div>
+    <br>
+
+    <div class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+            <h3>Create assets</h3>
+            <br>
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="from" class="form-label">Input NFT creator address</label>
+                        <select type="text" class="form-control col-md" name="from" id="from" placeholder="input NFT creator address here . . ."></select>
+                    </div>
+                </div>
+                <br>
+
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="asset-name" class="form-label">Asset name</label>
+                        <input type="text" class="form-control" name="asset-name" id="asset-name" placeholder="input asset name here . . ."></input>
+                    </div>
+                
+                    <div class="form-group col-md">
+                        <label for="asset-url" class="form-label">Asset url</label>
+                        <input type="text" class="form-control" name="asset-url" id="asset-url" placeholder="input asset url here . . ."></input>
+                    </div>
+                </div>
+                <br>
+
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="unit-name" class="form-label">Unit name</label>
+                        <input type="text" class="form-control" name="unit-name" id="unit-name" placeholder="input unit name here . . ."></input>
+                    </div>
+                
+                    <div class="form-group col-md">
+                        <label for="total-units" class="form-label">Total units</label>
+                        <input type="number" class="form-control" name="total-units" id="total-units" placeholder="input total units here . . ."></input>
+                    </div>
+                </div>
+                <br>
+
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="decimals" class="form-label">Decimals</label>
+                        <input type="number" class="form-control" name="decimals" id="decimals" placeholder="input decimals here . . ."></input>
+                    </div>
+                
+                    <div class="form-group col-md">
+                        <label for="note" class="form-label">Note</label>
+                        <input type="text" class="form-control" name="note" id="note" placeholder="input your note here . . ."></input>
+                    </div>
+                </div>
+                <br>
+
+                <div class="form-group col-md">
+                    <button class="btn btn-dark" onclick="create_nft_proper()">Create asset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <br>
+{% endblock %}

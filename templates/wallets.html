@@ -1,0 +1,413 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <script>
+        // global variables
+        //const algodServer = "https://testnet-api.algonode.cloud"
+        //const algodServer = "https://mainnet-api.algonode.cloud"
+        //const algorand_token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let incomingLedger = 'TestNet'
+        let algodServer = "https://testnet-api.algonode.cloud"
+        let algorand_token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        const port = '';
+        let algodClient;
+
+        // AlgoSign wallet installation checker
+        function check_wallet_installation() {
+            var myText;
+            if (typeof AlgoSigner !== 'undefined') {
+                myText = 'The AlgoSigner wallet is installed.';
+            } else {
+                myText = 'The AlgoSigner wallet is NOT installed.';
+            };
+            alert (myText);
+        };
+
+        // AlgoSing wallet connector
+        function create_connection() {
+            var myText;
+            AlgoSigner.connect()
+            .then((d) => {
+                myText = JSON.stringify(d);
+            })
+            .catch((e) => {
+                console.error(e);
+                myText = 'An error occurred during connection:\n' + JSON.stringify(e);
+            });
+            if (myText==undefined) {
+                alert ('Wallets connected with successfully');
+            } else {
+                alert (myText);
+            }
+        }
+
+        // populate accounts
+        async function select_network() {
+            // get the current selected network
+            var select = document.getElementById('network');
+            var value = select.options[select.selectedIndex].value;
+            console.log(value); // en
+            if (value == 'local') {
+                console.log('local network selected');
+                // TODO: change this accordingly in dev network
+                incomingLedger = 'LocalNet';
+                algodServer = "https://testnet-api.algonode.cloud";
+            } else if (value == 'main') {
+                console.log('main network selected');
+                incomingLedger = 'MainNet';
+                algodServer = "https://mainnet-api.algonode.cloud";
+            } else if (value == 'test') {
+                console.log('test network selected');
+                incomingLedger = 'TestNet';
+                algodServer = "https://testnet-api.algonode.cloud";
+            };
+            alert ('The '+value+' network selected successfully')
+        }
+
+        // Load AlgoSign wallets
+        async function load_wallets() {
+            setup()
+            AlgoSigner.accounts({
+            ledger: incomingLedger
+            })
+            .then((d) => {
+                 document.getElementById('addresses').innerHTML = JSON.stringify(d, null, 2);
+                
+                // Append accounts to account select html displays
+                let select = document.getElementById('from');
+                select.textContent = '';
+                for (var i = d.length - 1; i >= 0; i--) {
+                    let option = document.createElement('option');
+                    option.text = d[i].address;
+                    option.value = d[i].address;
+                    select.appendChild(option);
+                }
+            })
+            .catch((e) => {
+            console.error(e);
+            document.getElementById('addresses').innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                alert ('All accounts in the wallet loaded');
+            });
+        }
+
+        // setting up sdk
+        async function setup() {
+            //const algodServer = 'https://testnet-algorand.api.purestake.io/ps2'
+            //const indexerServer = 'https://testnet-algorand.api.purestake.io/idx2'
+            //const token = { 'X-API-Key': 'YOUR API KEY HERE' }
+            algodClient = new algosdk.Algodv2(algorand_token, algodServer, port);
+            //indexerClient = new algosdk.Indexer(token, indexerServer, port);
+            algodClient.healthCheck().do()
+            .then(d => { 
+                console.log('setup completed')
+            })
+            .catch(e => { 
+                console.error(e); 
+            });
+        }    
+
+        function check_status(){
+            algodClient.status.do()
+            .then((d) => {
+            document.getElementById('status').innerHTML = JSON.stringify(d);
+            })
+            .catch((e) => {
+            console.error(e);
+            document.getElementById('status').innerHTML = JSON.stringify(e);
+            });           
+        }
+
+        // get default parameters
+        let txParamsJS = {};
+        function getParams() {
+            let paramsCodeElem = document.getElementById('status');
+            algodClient.getTransactionParams().do()
+            .then((d) => {
+                txParamsJS = d;
+                paramsCodeElem.innerHTML = JSON.stringify(txParamsJS, null, 2);
+            })      
+            .catch((e) => {
+                console.error(e);
+                paramsCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                //hljs.highlightBlock(paramsCodeElem);
+            });
+        }
+
+        // a function to sign transactions
+        function signTransaction() {
+            const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+            from: document.getElementById('from').value,
+            to: document.getElementById('to').value,
+            amount: +document.getElementById('amount').value,
+            note: document.getElementById('note').value,
+            suggestedParams: {...txParamsJS}
+            });
+
+            // Use the AlgoSigner encoding library to make the transactions base64
+            let txn_b64 = AlgoSigner.encoding.msgpackToBase64(txn.toByte());
+
+            AlgoSigner.signTxn([{txn: txn_b64}])
+            .then((d) => {
+                signedTxs = d;
+            })
+            .catch((e) => {
+                console.error(e);
+            });
+        }
+
+        const waitForConfirmation = async function (algodClient, txId, timeout) {
+            console.log(algodClient)
+            console.log(typeof(algodClient))
+            console.log(txId)
+            console.log(typeof(txId))
+            console.log(timeout)
+            console.log(typeof(timeout))
+            if (algodClient == null || txId == null || timeout < 0) {
+                throw new Error("Bad arguments");
+            }
+
+            const status = (await algodClient.status().do());
+            if (status === undefined) {
+                throw new Error("Unable to get node status");
+            }
+
+            const startround = status["last-round"] + 1;
+            let current_round = startround;
+
+            while (current_round < (startround + timeout)) {
+                const pendingInfo = await algodClient.pendingTransactionInformation(txId.txId).do();
+                if (pendingInfo !== undefined) {
+                    if (pendingInfo["confirmed-round"] !== null && pendingInfo["confirmed-round"] > 0) {
+                        //Got the completed Transaction
+                        return pendingInfo;
+                    } else {
+                        if (pendingInfo["pool-error"] != null && pendingInfo["pool-error"].length > 0) {
+                            // If there was a pool error, then the transaction has been rejected!
+                            throw new Error("Transaction " + txId + " rejected - pool error: " + pendingInfo["pool-error"]);
+                        }
+                    }
+                }
+                await algodClient.statusAfterBlock(current_round).do();
+                current_round++;
+            }
+
+            throw new Error("Transaction " + txId + " not confirmed after " + timeout + " rounds!");
+        };
+
+        // own transaction implementation
+        let tx = {}
+        let signedTxs = {};
+        async function create_the_damn_transaction() {
+            //params = algodClient.suggestedParams();
+            let params = await algodClient.getTransactionParams().do();
+            //params.fee = 1000;
+            //params.flat_fee = true;
+            const to = document.getElementById('to').value;
+            const enc = new TextEncoder();
+            let note = enc.encode(document.getElementById('note').value);
+            console.log(+document.getElementById('amount').value)
+            console.log(typeof(+document.getElementById('amount').value))
+            let amount = BigInt(+document.getElementById('amount').value);
+            let from = document.getElementById('from').value;
+            let txn = await algosdk.makePaymentTxnWithSuggestedParams(from, to, amount, undefined, note, params);
+            console.log('transaction created')
+            
+            // Use the AlgoSigner encoding library to make the transactions base64
+            let txn_b64 = AlgoSigner.encoding.msgpackToBase64(txn.toByte());
+            await AlgoSigner.signTxn([{txn: txn_b64}])
+            .then((d) => {
+                signedTxs = d;
+            })
+            .catch((e) => {
+                console.error(e);
+            });
+            console.log('transaction signed')
+            
+            // send transaction
+            await AlgoSigner.send({
+                ledger: incomingLedger,
+                tx: signedTxs[0].blob
+            })
+            .then((d) => {
+                tx = d;
+            })
+            .catch((e) => {
+                console.error(e);
+            });
+            console.log('transaction sent')
+
+
+            // Wait for confirmation
+            let confirmedTxn = await waitForConfirmation(algodClient, tx, 30);
+            //Get the completed Transaction
+            console.log("Transaction " + txId + " confirmed in round " + confirmedTxn["confirmed-round"]);
+            let mytxinfo = JSON.stringify(confirmedTxn.txn.txn, undefined, 2);
+            console.log("Transaction information: %o", mytxinfo);
+            var string = new TextDecoder().decode(confirmedTxn.txn.txn.note);
+            console.log("Note field: ", string);
+            alert('transaction completed successfully')
+
+            // Wait for confirmation
+            //let pendingCodeElem = document.getElementById('status');
+      
+            //await algodClient.pendingTransactionInformation(tx.txId).do()
+            //.then((d) => {
+                //pendingCodeElem.innerHTML = JSON.stringify(d, toJsonReplace, 2);
+            //})
+            //.catch((e) => {
+              //  console.error(e);
+                //pendingCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            //})
+            //.finally(() => {
+                //hljs.highlightBlock(pendingCodeElem);
+           // });
+        }
+
+        // commit signed transactions to the block chain
+        function sendSignedTransaction() {
+            AlgoSigner.send({
+                ledger: incomingLedger,
+                tx: signedTxs[0].blob
+            })
+            .then((d) => {
+                tx = d;
+            })
+            .catch((e) => {
+                console.error(e);
+            });   
+        }
+
+        function confirmationStatus () {
+            let pendingCodeElem = document.getElementById('status');
+      
+            algodClient.pendingTransactionInformation(tx.txId).do()
+            .then((d) => {
+                pendingCodeElem.innerHTML = JSON.stringify(d, toJsonReplace, 2);
+            })
+            .catch((e) => {
+                console.error(e);
+                pendingCodeElem.innerHTML = JSON.stringify(e, null, 2);
+            })
+            .finally(() => {
+                //hljs.highlightBlock(pendingCodeElem);
+            });
+        }
+
+        // make transactions wrapper function
+        function make_transaction () {
+            getParams()
+            signTransaction()
+            sendSignedTransaction()
+            confirmationStatus()
+            console.log('transactions completed')
+        }
+    </script>
+    <br>
+    <h1>{% block title %} Wallet integration - Algorand blockchain network {% endblock %}</h1>
+    <br>
+    
+    <div id="network-selection-form" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+                <div class="row">
+                 <label for="network">Choose network</label>
+                 <div class="col-md">
+                         <select class="form-select form-select-sm bg-secondary" aria-label=".form-select-sm example" name="network" id="network">
+                            <option value="test">Test-net</option>
+                            <option value="main">Main-net</option>
+                            <option value="local">Local-net (dev)</option>
+                     </select>
+                 </div>
+                 <div class="col-md">
+                     <button type="button" class="btn btn-dark btn-sm" onclick="select_network()">Select network</button>
+                 </div>
+                </div>
+             <!--
+                <br>
+                <h3>User's records</h3>
+             -->
+        </div>
+        <div>
+            <!--    TABLE GOES HERE     -->
+        </div>
+    </div>
+    <br>
+
+    <div id="wallet-integration" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+            <div class="row">
+                <h3 class="col-md">Connect to your wallet</h3>
+            </div>
+            <div class="row">
+                <div class="col-md">
+                    <button onclick="check_wallet_installation()" class="btn btn-dark btn-sm">Check</button>
+                    <button onclick="create_connection()" class="btn btn-dark btn-sm">Connect</button>
+                </div>
+            </div>
+            <br>
+
+            <div class="form-group">
+                <label for="addresses" class="form-label">Wallet addresses</label>
+                <textarea type="text" class="form-control" style="height: 300px;" name="addresses" id="addresses" readonly></textarea>
+            </div>
+            <br>
+            <div class="form-group">
+                <button onclick="load_wallets()" class="btn btn-dark">Load wallets</button>
+            </div>
+            <br>
+
+           <!--
+            <div class="form-group">
+                <label for="status" class="form-label">Wallet status</label>
+                <textarea type="text" class="form-control" name="status" id="status" readonly></textarea>
+            </div>
+            <br>
+            <div class="form-group">
+                <button onclick="check_status()" class="btn btn-dark" id="get-wallets-status-btn">Status</button>
+            </div>
+           -->
+        </div>
+    </div>
+    <br>
+
+    <div class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+            <h3>Make your transactions</h3>
+            <br>
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="from-address" class="form-label">Senders public address</label>
+                        <select type="text" class="form-control" name="fromAddress" id="from" placeholder="input senders public account address here . . ."></select>
+                    </div>
+                
+                    <div class="form-group col-md">
+                            <label for="to-address" class="form-label">Receivers public address</label>
+                            <input type="text" class="form-control" name="toAddress" id="to" placeholder="input receivers public account address here . . ."></input>
+                    </div>
+                </div>
+                <br>
+                
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="ammount" class="form-label">Enter algo amount (in micro algos)</label>
+                        <input type="number" class="form-control" name="algo-amount" id="amount" placeholder="input total micro algos to send here . . ."></input>
+                    </div>
+                    <div class="form-group col-md">
+                        <label for="note" class="form-label">Add some note</label>
+                        <input type="text" class="form-control" name="note" id="note" placeholder="add some note here . . ."></input>
+                    </div>
+                </div>
+                <br>
+
+                <div class="form-group col-md">
+                    <button class="btn btn-dark" onclick="create_the_damn_transaction()">Make transaction</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <br>
+    <!--<script src="{{url_for('static', filename='test.js')}}" rel="javascript"></script>-->
+{% endblock %}

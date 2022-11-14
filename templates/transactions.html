@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <script>
+        // global variables
+        let incomingLedger = 'TestNet'
+
+        // populate accounts
+        async function select_network() {
+            // get the current selected network
+            var select = document.getElementById('network');
+            var value = select.options[select.selectedIndex].value;
+            console.log(value); // en
+            if (value == 'local') {
+                console.log('local network selected');
+                // TODO: change this accordingly in dev network
+                incomingLedger = 'LocalNet';
+                algodServer = "https://testnet-api.algonode.cloud";
+            } else if (value == 'main') {
+                console.log('main network selected');
+                incomingLedger = 'MainNet';
+                algodServer = "https://mainnet-api.algonode.cloud";
+            } else if (value == 'test') {
+                console.log('test network selected');
+                incomingLedger = 'TestNet';
+                algodServer = "https://testnet-api.algonode.cloud";
+            };
+            alert ('The '+value+' network selected successfully')
+            load_accounts()
+        }
+
+        // populate accounts
+        function load_accounts() {
+            AlgoSigner.accounts({
+                ledger: incomingLedger
+            })
+            .then((d) => {
+                // Append accounts to account select
+                let select = document.getElementById('address');
+                select.textContent = '';
+                for (var i = d.length - 1; i >= 0; i--) {
+                    let option = document.createElement('option');
+                    option.text = d[i].address;
+                    option.value = d[i].address;
+                    select.appendChild(option);
+                }
+                
+                let selectII = document.getElementById('from-address');
+                selectII.textContent = '';
+                for (var i = d.length - 1; i >= 0; i--) {
+                    let option = document.createElement('option');
+                    option.text = d[i].address;
+                    option.value = d[i].address;
+                    selectII.appendChild(option);
+                }
+            })
+            .catch((e) => {
+                console.error(e);
+                alert (JSON.stringify(e, null, 2));
+                
+            })
+            .finally(() => {
+                //alert ('All accounts in the network loaded');
+            });
+        }
+    </script>
+    
+    <br>
+    <h1>{% block title %} Transactions - Algorand blockchain network {% endblock %}</h1>
+    <br>
+
+    <div id="network-selection-form" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+                <div class="row">
+                 <label for="network">Choose network</label>
+                 <div class="col-md">
+                         <select class="form-select form-select-sm bg-secondary" aria-label=".form-select-sm example" name="network" id="network">
+                             <option value="test">Test-net</option>
+                             <option value="main">Main-net</option>
+                         <option value="local">Local-net (dev)</option>
+                     </select>
+                 </div>
+                 <div class="col-md">
+                     <button type="button" class="btn btn-dark btn-sm" onclick="select_network()">Select network</button>
+                 </div>
+                </div>
+             <!--
+                <br>
+                <h3>User's records</h3>
+             -->
+        </div>
+        <div>
+            <!--    TABLE GOES HERE     -->
+        </div>
+    </div>
+    <br>
+
+    <div id="get-account-balance" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+            <form class="mb-3" method="POST" action="{{ url_for("display_balance") }}">
+                <h3>User account balances</h3>
+                <br>
+                <div class="form-group">
+                    <label for="address" class="form-label">Input account address</label>
+                    <select type="text" class="form-control" name="accountAddress" id="address" placeholder="input your public account address here . . ."></select>
+                </div>
+                <br>
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="balance" class="form-label bg-secondary">Balance in mini-algos</label>
+                        <input type="number" class="form-control" id="balance" placeholder="" value="{{balance}}" readonly>
+                    </div>
+                    <div class="form-group col-md">
+                        <label for="total-balance" class="form-label">Balance in algos</label>
+                        <input type="number" class="form-control" id="total-balance" placeholder="" value="{{balance/1000000}}" readonly>
+                    </div>
+                </div>
+                <br>
+                <div class="form-group">
+                    <button class="btn btn-dark" type="submit">Get balance</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <br>
+
+    <div id="transactions" class="p-3 mb-2 bg-secondary text-dark rounded">
+        <div class="mb-3 container">
+            <h3>Make your transactions</h3>
+            <br>
+            <form class="mb-3" method="POST" action="{{ url_for("commit_transaction") }}">
+                <div class="row">
+                    <div class="form-group col-md">
+                        <label for="from-address" class="form-label">Senders public address</label>
+                        <select type="text" class="form-control" name="fromAddress" id="from-address" placeholder="input senders public account address here . . ."></select>
+                    </div>
+        
+                    <div class="form-group col-md">
+                        <label for="to-address" class="form-label">Receivers public address</label>
+                        <input type="text" class="form-control" name="toAddress" id="to-address" placeholder="input receivers public account address here . . ."></input>
+                    </div>
+                </div>
+                <br>
+        
+                <div class="row">
+                    <label for="ammount" class="form-label">Enter algo amount (in micro algos)</label>
+                    <div class="form-group col-md">
+                        <input type="number" class="form-control" name="algo-amount" id="amount" placeholder="input total micro algos to send here . . ."></input>
+                    </div>
+                    <div class="form-group col-md">
+                        <button class="btn btn-dark" type="submit">Commit transaction</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+{% endblock %}
